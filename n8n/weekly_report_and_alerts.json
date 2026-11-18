@@ -1,0 +1,266 @@
+{
+  "name": "Spend Insights - Weekly report and fraud alerts",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "2be2624d-b88f-495b-b505-6c14a4ada5cf",
+      "name": "Every Monday 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "955696a8-6b40-4260-a612-4d211a56ff68",
+      "name": "Run manually",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Edit these values for your setup.\nreturn [{\n  json: {\n    apiBaseUrl: 'http://localhost:8000',          // where the Spend Insights API runs\n    apiKey: '',                                   // match SERVICE_API_KEY in .env (leave empty if not set)\n    customerIds: ['C001', 'C002', 'C003'],        // customers to report on\n    slackWebhookUrl: 'https://hooks.slack.com/services/REPLACE/ME/PLEASE'\n  }\n}];"
+      },
+      "id": "8650e4b8-3382-4a02-8a46-313c5e42559f",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $input.first().json;\nreturn cfg.customerIds.map(id => ({ json: { customerId: id } }));"
+      },
+      "id": "77c4a5f2-f93d-4480-a53a-9df5c0ce6057",
+      "name": "One item per customer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/reports/weekly/{{ $json.customerId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $('Config').first().json.apiKey }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "8e6bdc31-91ac-41df-8d49-a08f338ebd15",
+      "name": "Get weekly report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        400
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "e95f3f76-ca8b-46d2-a50b-9e56d02610e3",
+              "leftValue": "={{ $json.anomaly_count }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6e241858-fb96-4ef9-8a44-4dd35ee0a00b",
+      "name": "Any flagged transactions?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.slackWebhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: ':rotating_light: *Review needed* (' + $json.anomaly_count + ' flagged)\\n' + $json.slack_text }) }}",
+        "options": {}
+      },
+      "id": "b624e27e-224d-444a-a4d7-70c5db5d8da6",
+      "name": "Slack: fraud alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.slackWebhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.slack_text }) }}",
+        "options": {}
+      },
+      "id": "7b25c9d3-7441-4c44-ad8a-0f33373b55cd",
+      "name": "Slack: weekly summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.slackWebhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: ':x: Spend Insights report failed for ' + $('One item per customer').item.json.customerId + ': ' + ($json.error?.message || JSON.stringify($json.error || $json)) }) }}",
+        "options": {}
+      },
+      "id": "d32afed6-75dd-41b3-af8f-520478ea47ce",
+      "name": "Slack: report failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        560
+      ]
+    }
+  ],
+  "connections": {
+    "Every Monday 08:00": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run manually": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "One item per customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One item per customer": {
+      "main": [
+        [
+          {
+            "node": "Get weekly report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get weekly report": {
+      "main": [
+        [
+          {
+            "node": "Any flagged transactions?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack: report failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any flagged transactions?": {
+      "main": [
+        [
+          {
+            "node": "Slack: fraud alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack: weekly summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,122 @@
+{
+  "name": "Spend Insights - Ask the agent (webhook)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "spend-agent",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "d053da11-2c00-4d01-8d83-827a77105eaf",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "7c5bc0fb-64f1-4829-8ebf-2d0905b334d9"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/ask",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": ""
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ customer_id: $json.body.customer_id || 'C001', question: $json.body.question }) }}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "id": "648ff1a4-559a-4621-917a-d1b47d758567",
+      "name": "Ask agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ answer: $json.answer, tools_used: $json.tool_calls.map(t => t.tool), latency_ms: $json.latency_ms }) }}",
+        "options": {}
+      },
+      "id": "7eb504dc-b399-45d6-8977-05888c5d0b0a",
+      "name": "Respond with answer",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'The agent is unavailable right now. Please try again.' }) }}",
+        "options": {
+          "responseCode": 503
+        }
+      },
+      "id": "95eadbcc-6ee0-415e-a42e-e3d5f3d99b6a",
+      "name": "Respond with error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Ask agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask agent": {
+      "main": [
+        [
+          {
+            "node": "Respond with answer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond with error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
